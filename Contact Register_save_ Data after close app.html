@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact Register</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #eef2f6; --surface: #ffffff; --text: #17212b; --muted: #5d6b7a;
+    --line: #d5dde6; --accent: #0b6e4f; --accent-ink: #ffffff; --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11181f; --surface: #1a232c; --text: #e8eef4; --muted: #93a2b1;
+      --line: #2c3945; --accent: #3fbf94; --accent-ink: #08241a; --danger: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif; line-height: 1.5;
+  }
+  main { max-width: 1000px; margin: 0 auto; padding: 32px 16px 56px; }
+  h1 { font-size: 1.8rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .panel {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 20px; margin-bottom: 20px;
+  }
+  .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .full { grid-column: 1 / -1; }
+  label { display: block; font-size: .9rem; font-weight: 600; margin-bottom: 4px; }
+  input, textarea {
+    width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  }
+  textarea { resize: vertical; min-height: 76px; }
+  input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+  .err { color: var(--danger); font-size: .82rem; min-height: 1.2em; margin-top: 2px; }
+  .hint { color: var(--muted); font-size: .8rem; float: right; font-weight: 400; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  button {
+    font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 6px;
+    border: 1px solid var(--accent); cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  button.ghost { background: transparent; color: var(--accent); }
+  button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .head h2 { margin: 0; font-size: 1.15rem; }
+  .search { max-width: 240px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .85rem; color: var(--muted); }
+  td.desc { max-width: 260px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  td.nowrap { white-space: nowrap; }
+  td button { padding: 4px 10px; font-size: .85rem; margin-right: 4px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+  .editing { font-weight: 600; color: var(--accent); margin: 0 0 10px; }
+  @media (max-width: 720px) { .fields { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Contact Register</h1>
+  <p class="sub">Add a person with a short description, then download everyone as an Excel file.</p>
+  <p class="sub" id="sync" role="status">Entries are saved on this device and stay until you delete them.</p>
+
+  <section class="panel">
+    <p class="editing" id="editing" hidden>Editing an entry. Change the details and save.</p>
+    <div class="fields">
+      <div>
+        <label for="name">Name</label>
+        <input id="name" type="text" autocomplete="off">
+        <div class="err" id="e-name"></div>
+      </div>
+      <div>
+        <label for="mobile">Mobile number</label>
+        <input id="mobile" type="tel" inputmode="numeric" autocomplete="off">
+        <div class="err" id="e-mobile"></div>
+      </div>
+      <div>
+        <label for="profession">Profession</label>
+        <input id="profession" type="text" autocomplete="off">
+        <div class="err" id="e-profession"></div>
+      </div>
+      <div class="full">
+        <label for="description">Description <span class="hint" id="dcount">0 / 300</span></label>
+        <textarea id="description" maxlength="300" placeholder="Notes about this person (optional)"></textarea>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="add">Save entry</button>
+      <button id="cancel" class="ghost" hidden>Cancel edit</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="head">
+      <h2>Saved entries (<span id="count">0</span>)</h2>
+      <div class="actions" style="margin:0">
+        <input id="search" class="search" type="search" placeholder="Search entries" aria-label="Search entries">
+        <button id="download" class="ghost">Download Excel</button>
+        <button id="clear" class="danger">Clear all</button>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Mobile number</th><th>Profession</th><th>Description</th><th>Added</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="empty">No entries yet. Fill in the form above and save.</div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var KEY = "contact-register-entries";
+  var entries = [];
+  var editIndex = -1;
+
+  try { entries = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { entries = []; }
+  // Older entries saved before the description field existed
+  entries.forEach(function (en) {
+    if (typeof en.description !== "string") en.description = "";
+    if (!en.added) en.added = "";
+  });
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var cloudRef = null, dirty = false;
+
+  function setSync(t) { $("sync").textContent = t; }
+
+  function norm(en) {
+    return {
+      name: String(en.name || ""), mobile: String(en.mobile || ""),
+      profession: String(en.profession || ""),
+      description: typeof en.description === "string" ? en.description : "",
+      added: en.added || ""
+    };
+  }
+
+  function pushCloud() {
+    if (!cloudRef) return;
+    cloudRef.set({ entries: entries, updated: Date.now() }).then(function () {
+      setSync("Saved to your account and this device. Entries stay until you delete them.");
+    }).catch(function () {
+      setSync("Saved on this device only. Account storage could not be reached.");
+    });
+  }
+
+  function persist() {
+    dirty = true;
+    try { localStorage.setItem(KEY, JSON.stringify(entries)); } catch (e) {}
+    pushCloud();
+  }
+
+  function initCloud() {
+    if (!window.claude || !window.claude.use) return;
+    Promise.all([window.claude.use("db"), window.claude.use("user")]).then(function (r) {
+      var db = r[0], user = r[1];
+      if (!db || !user) return;
+      return user.id().then(function (id) {
+        if (!id) return;
+        var ref = db.doc("data/users/" + id + "/register");
+        return ref.get().then(function (snap) {
+          var d = snap.exists ? snap.data() : null;
+          cloudRef = ref;
+          if (d && Array.isArray(d.entries) && !dirty) {
+            entries = d.entries.map(norm);
+            try { localStorage.setItem(KEY, JSON.stringify(entries)); } catch (e) {}
+            render();
+            setSync("Saved to your account and this device. Entries stay until you delete them.");
+          } else if (entries.length || dirty) {
+            pushCloud();
+          } else {
+            setSync("Saved to your account and this device. Entries stay until you delete them.");
+          }
+        });
+      });
+    }).catch(function () {
+      setSync("Saved on this device only. Account storage could not be reached.");
+    });
+  }
+
+  function today() {
+    var d = new Date();
+    var p = function (n) { return String(n).padStart(2, "0"); };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  function render() {
+    var q = $("search").value.trim().toLowerCase();
+    var tbody = $("rows");
+    tbody.innerHTML = "";
+    var shown = 0;
+    entries.forEach(function (en, i) {
+      var hay = (en.name + " " + en.mobile + " " + en.profession + " " + en.description).toLowerCase();
+      if (q && hay.indexOf(q) === -1) return;
+      shown++;
+      var tr = document.createElement("tr");
+      [i + 1, en.name, en.mobile, en.profession, en.description, en.added].forEach(function (v, c) {
+        var td = document.createElement("td");
+        td.textContent = v;
+        if (c === 4) td.className = "desc";
+        if (c === 5 || c === 2) td.className = "nowrap";
+        tr.appendChild(td);
+      });
+      var td = document.createElement("td");
+      td.className = "nowrap";
+      var eb = document.createElement("button");
+      eb.className = "ghost";
+      eb.textContent = "Edit";
+      eb.addEventListener("click", function () { startEdit(i); });
+      var db = document.createElement("button");
+      db.className = "danger";
+      db.textContent = "Delete";
+      db.addEventListener("click", function () {
+        entries.splice(i, 1);
+        if (editIndex === i) stopEdit(); else if (editIndex > i) editIndex--;
+        persist(); render();
+      });
+      td.appendChild(eb); td.appendChild(db);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    });
+    $("count").textContent = entries.length;
+    $("empty").textContent = entries.length
+      ? "No entries match your search."
+      : "No entries yet. Fill in the form above and save.";
+    $("empty").style.display = shown ? "none" : "block";
+    $("download").disabled = !entries.length;
+    $("clear").disabled = !entries.length;
+  }
+
+  function validate() {
+    var name = $("name").value.trim();
+    var mobile = $("mobile").value.trim();
+    var prof = $("profession").value.trim();
+    var desc = $("description").value.trim();
+    $("e-name").textContent = name ? "" : "Enter a name.";
+    $("e-profession").textContent = prof ? "" : "Enter a profession.";
+    var digits = mobile.replace(/[\s\-+()]/g, "");
+    var mobileOk = /^\d{7,15}$/.test(digits);
+    $("e-mobile").textContent = mobileOk ? "" : "Enter 7 to 15 digits.";
+    if (!name || !prof || !mobileOk) return null;
+    return { name: name, mobile: mobile, profession: prof, description: desc };
+  }
+
+  function clearForm() {
+    ["name", "mobile", "profession", "description"].forEach(function (id) { $(id).value = ""; });
+    $("dcount").textContent = "0 / 300";
+  }
+
+  function startEdit(i) {
+    editIndex = i;
+    var en = entries[i];
+    $("name").value = en.name;
+    $("mobile").value = en.mobile;
+    $("profession").value = en.profession;
+    $("description").value = en.description;
+    $("dcount").textContent = en.description.length + " / 300";
+    $("editing").hidden = false;
+    $("cancel").hidden = false;
+    $("add").textContent = "Update entry";
+    $("name").focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function stopEdit() {
+    editIndex = -1;
+    $("editing").hidden = true;
+    $("cancel").hidden = true;
+    $("add").textContent = "Save entry";
+    clearForm();
+  }
+
+  $("add").addEventListener("click", function () {
+    var data = validate();
+    if (!data) return;
+    if (editIndex >= 0) {
+      data.added = entries[editIndex].added;
+      entries[editIndex] = data;
+      stopEdit();
+    } else {
+      data.added = today();
+      entries.push(data);
+      clearForm();
+      $("name").focus();
+    }
+    persist();
+    render();
+  });
+
+  $("cancel").addEventListener("click", stopEdit);
+  $("search").addEventListener("input", render);
+  $("description").addEventListener("input", function () {
+    $("dcount").textContent = this.value.length + " / 300";
+  });
+
+  ["name", "mobile", "profession"].forEach(function (id) {
+    $(id).addEventListener("keydown", function (e) {
+      if (e.key === "Enter") $("add").click();
+    });
+  });
+
+  $("download").addEventListener("click", function () {
+    if (typeof XLSX === "undefined") {
+      alert("The Excel library could not load. Check your internet connection and reload the page.");
+      return;
+    }
+    var rows = entries.map(function (en, i) {
+      return {
+        "S.No": i + 1,
+        "Name": en.name,
+        "Mobile Number": en.mobile,
+        "Profession": en.profession,
+        "Description": en.description,
+        "Date Added": en.added
+      };
+    });
+    var ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [{ wch: 6 }, { wch: 26 }, { wch: 18 }, { wch: 24 }, { wch: 50 }, { wch: 12 }];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Contacts");
+    var buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    if (!window.claude || !window.claude.use) {
+      alert("Downloading is not available in this view.");
+      return;
+    }
+    window.claude.use("downloads").then(function (dl) {
+      if (!dl) { alert("Downloading is not available in this view."); return; }
+      return dl.save({ filename: "contacts.xlsx", data: buf }).catch(function (err) {
+        if (err && err.code === "declined") return;
+        alert("The file could not be saved: " + ((err && err.message) || "unknown error"));
+      });
+    });
+  });
+
+  $("clear").addEventListener("click", function () {
+    if (confirm("Delete all saved entries?")) {
+      entries = []; stopEdit(); persist(); render();
+    }
+  });
+
+  render();
+  initCloud();
+})();
+</script>
+</body>
+</html>
